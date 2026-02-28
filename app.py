@@ -1,24 +1,41 @@
-from flask import Flask
+from flask import Flask, request, jsonify
 import yt_dlp
 
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "API Running"
+    return jsonify({
+        "status": "running",
+        "message": "Downloader API Running"
+    })
+
 
 @app.route("/download")
 def download():
     url = request.args.get("url")
+
     if not url:
-        return {"error": "No URL provided"}, 400
+        return jsonify({"error": "No URL provided"}), 400
 
-    with yt_dlp.YoutubeDL({"quiet": True}) as ydl:
-        info = ydl.extract_info(url, download=False)
-        return {
-            "title": info.get("title"),
-            "url": info.get("url"),
-        }
+    ydl_opts = {
+        "format": "best",
+        "quiet": True,
+        "noplaylist": True
+    }
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000))
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+
+            return jsonify({
+                "title": info.get("title"),
+                "duration": info.get("duration"),
+                "thumbnail": info.get("thumbnail"),
+                "direct_url": info.get("url")
+            })
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e)
+        }), 500
