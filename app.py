@@ -1,12 +1,10 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import yt_dlp
-import requests
-import urllib.parse
 
 app = Flask(__name__)
 
-# 🔥 Fix CORS completely
+# 🔥 حل مشكل CORS نهائياً
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 @app.route("/")
@@ -17,9 +15,10 @@ def home():
     })
 
 
-@app.route("/download", methods=["GET"])
+@app.route("/download", methods=["GET", "OPTIONS"])
 def download():
 
+    # منع Kick من API
     url = request.args.get("url")
 
     if not url:
@@ -40,36 +39,12 @@ def download():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
-        formats = info.get("formats")
-        if not formats:
-            return jsonify({"error": "No formats found"}), 500
-
-        # Pick best progressive mp4 (video+audio)
-        best = None
-        for f in reversed(formats):
-            if f.get("ext") == "mp4" and f.get("acodec") != "none":
-                best = f
-                break
-
-        if not best:
-            return jsonify({"error": "No suitable MP4 format found"}), 500
-
-        direct_url = best.get("url")
-        headers = best.get("http_headers", {})
-
-        # Stream video from YouTube
-        r = requests.get(direct_url, headers=headers, stream=True)
-
-        filename = f"{info.get('title', 'video')}.mp4"
-        filename = urllib.parse.quote(filename)
-
-        return Response(
-            r.iter_content(chunk_size=8192),
-            content_type=r.headers.get("Content-Type", "video/mp4"),
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"'
-            }
-        )
+            return jsonify({
+                "title": info.get("title"),
+                "duration": info.get("duration"),
+                "thumbnail": info.get("thumbnail"),
+                "direct_url": info.get("url")
+            })
 
     except Exception as e:
         return jsonify({
