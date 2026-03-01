@@ -1,16 +1,34 @@
-from flask import Response
+from flask import Flask, request, jsonify, Response
+from flask_cors import CORS
+import yt_dlp
 import requests
 import urllib.parse
 
+app = Flask(__name__)
+
+# 🔥 Fix CORS completely
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+
+@app.route("/")
+def home():
+    return jsonify({
+        "status": "running",
+        "message": "Downloader API Running"
+    })
+
+
 @app.route("/download", methods=["GET"])
 def download():
+
     url = request.args.get("url")
 
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
     if "kick.com" in url.lower():
-        return jsonify({"error": "Kick.com is not supported"}), 400
+        return jsonify({
+            "error": "Kick.com is not supported via this API"
+        }), 400
 
     ydl_opts = {
         "format": "best",
@@ -26,7 +44,7 @@ def download():
         if not formats:
             return jsonify({"error": "No formats found"}), 500
 
-        # Pick best progressive mp4 (has audio+video)
+        # Pick best progressive mp4 (video+audio)
         best = None
         for f in reversed(formats):
             if f.get("ext") == "mp4" and f.get("acodec") != "none":
@@ -39,10 +57,10 @@ def download():
         direct_url = best.get("url")
         headers = best.get("http_headers", {})
 
-        # Stream from YouTube
+        # Stream video from YouTube
         r = requests.get(direct_url, headers=headers, stream=True)
 
-        filename = f"{info.get('title','video')}.mp4"
+        filename = f"{info.get('title', 'video')}.mp4"
         filename = urllib.parse.quote(filename)
 
         return Response(
@@ -54,4 +72,10 @@ def download():
         )
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=3000)
