@@ -29,6 +29,9 @@ def _get_cookie_file():
     if not cookies_content:
         return None
 
+    # Railway sometimes stores multiline vars with literal \n instead of real newlines
+    cookies_content = cookies_content.replace("\\n", "\n").replace("\\t", "\t")
+
     tmp = tempfile.NamedTemporaryFile(
         mode="w", suffix=".txt", delete=False, prefix="yt_cookies_"
     )
@@ -39,14 +42,33 @@ def _get_cookie_file():
 
 
 def get_ydl_opts(extra=None):
-    """Return base yt-dlp options, injecting cookies automatically if available."""
-    opts = {"quiet": True, "noplaylist": True}
+    """
+    Return base yt-dlp options with:
+    - Android/iOS player clients to bypass YouTube bot detection on server IPs
+    - Cookies injected automatically if YOUTUBE_COOKIES env var is set
+    
+    YouTube's bot detection fires on datacenter IPs (like Railway) when using
+    the default 'web' client. Android/iOS/TV clients use different API endpoints  
+    that don't trigger the bot check.
+    """
+    opts = {
+        "quiet": True,
+        "noplaylist": True,
+        # Use mobile/TV API clients — these bypass server-IP bot detection
+        "extractor_args": {
+            "youtube": {
+                # yt-dlp tries these in order; falls back if one fails
+                "player_client": ["android_vr", "ios", "tv_embedded"]
+            }
+        },
+    }
     cookie_path = _get_cookie_file()
     if cookie_path:
         opts["cookiefile"] = cookie_path
     if extra:
         opts.update(extra)
     return opts
+
 
 
 
