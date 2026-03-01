@@ -3,11 +3,51 @@ from flask_cors import CORS
 import yt_dlp
 import urllib.request as urlreq
 import re
+import os
+import tempfile
 
 app = Flask(__name__)
 
 # Fix CORS for all routes
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+
+# ── Cookie support ──────────────────────────────────────────────────────────────
+# Store your YouTube cookies as a Railway environment variable named YOUTUBE_COOKIES
+# (the full text content of a Netscape-format cookies.txt file).
+# yt-dlp will use these to authenticate and bypass bot detection.
+
+_cookie_file_path = None  # cached path so we only write once per worker
+
+
+def _get_cookie_file():
+    """Write YOUTUBE_COOKIES env var to a temp file once, return its path."""
+    global _cookie_file_path
+    if _cookie_file_path and os.path.exists(_cookie_file_path):
+        return _cookie_file_path
+
+    cookies_content = os.environ.get("YOUTUBE_COOKIES", "").strip()
+    if not cookies_content:
+        return None
+
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".txt", delete=False, prefix="yt_cookies_"
+    )
+    tmp.write(cookies_content)
+    tmp.close()
+    _cookie_file_path = tmp.name
+    return _cookie_file_path
+
+
+def get_ydl_opts(extra=None):
+    """Return base yt-dlp options, injecting cookies automatically if available."""
+    opts = {"quiet": True, "noplaylist": True}
+    cookie_path = _get_cookie_file()
+    if cookie_path:
+        opts["cookiefile"] = cookie_path
+    if extra:
+        opts.update(extra)
+    return opts
+
 
 
 @app.route("/")
@@ -35,7 +75,7 @@ def download():
 
     try:
         # Single yt-dlp call — extract info without downloading
-        with yt_dlp.YoutubeDL({"quiet": True, "noplaylist": True}) as ydl:
+        with yt_dlp.YoutubeDL(get_ydl_opts()) as ydl:
             info = ydl.extract_info(url, download=False)
 
         all_formats = info.get("formats", [])
@@ -106,7 +146,7 @@ def download():
 
         # ── Fallback: if no combined formats found, use yt-dlp "best" ───────────────
         if not formats_out:
-            with yt_dlp.YoutubeDL({"format": "best", "quiet": True, "noplaylist": True}) as ydl2:
+            with yt_dlp.YoutubeDL(get_ydl_opts({"format": "best"})) as ydl2:
                 info2 = ydl2.extract_info(url, download=False)
             formats_out = [{
                 "label": "Best Quality",
