@@ -1,7 +1,11 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import yt_dlp
 
 app = Flask(__name__)
+
+# 🔥 حل مشكل CORS نهائياً
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 @app.route("/")
 def home():
@@ -11,12 +15,19 @@ def home():
     })
 
 
-@app.route("/download")
+@app.route("/download", methods=["GET", "OPTIONS"])
 def download():
+
+    # منع Kick من API
     url = request.args.get("url")
 
     if not url:
         return jsonify({"error": "No URL provided"}), 400
+
+    if "kick.com" in url.lower():
+        return jsonify({
+            "error": "Kick.com is not supported via this API"
+        }), 400
 
     ydl_opts = {
         "format": "best",
@@ -39,3 +50,7 @@ def download():
         return jsonify({
             "error": str(e)
         }), 500
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=3000)
