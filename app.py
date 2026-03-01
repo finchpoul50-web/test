@@ -12,16 +12,26 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 # ── Cookie support ──────────────────────────────────────────────────────────────
-# Store your YouTube cookies as a Railway environment variable named YOUTUBE_COOKIES
-# (the full text content of a Netscape-format cookies.txt file).
-# yt-dlp will use these to authenticate and bypass bot detection.
+# Option 1 (Local dev — easiest):
+#   Set YOUTUBE_COOKIES_FILE=/absolute/path/to/your/cookies.txt in your .env
+#
+# Option 2 (Production / Railway):
+#   Set YOUTUBE_COOKIES to the full text content of a Netscape cookies.txt file.
+#   yt-dlp will use these to authenticate and bypass bot detection.
 
 _cookie_file_path = None  # cached path so we only write once per worker
 
 
 def _get_cookie_file():
-    """Write YOUTUBE_COOKIES env var to a temp file once, return its path."""
+    """Return path to a valid Netscape cookies.txt file, or None."""
     global _cookie_file_path
+
+    # ── Option 1: direct file path (easiest for local dev) ──────────────────
+    cookies_file = os.environ.get("YOUTUBE_COOKIES_FILE", "").strip()
+    if cookies_file and os.path.exists(cookies_file):
+        return cookies_file
+
+    # ── Option 2: inline content in env var (production / Railway) ──────────
     if _cookie_file_path and os.path.exists(_cookie_file_path):
         return _cookie_file_path
 
@@ -44,18 +54,18 @@ def _get_cookie_file():
 def get_ydl_opts(extra=None):
     """
     Return base yt-dlp options.
-    - 'web' client is tried first: with cookies it bypasses bot detection AND
-      returns all combined formats including format 22 (720p MP4).
-    - 'android_vr' / 'ios' are fallbacks if web still gets blocked.
+    - With cookies: 'web' client works and returns all formats including 720p.
+    - Without cookies: 'android_vr' / 'ios' are better at bypassing bot detection.
     """
+    has_cookies = bool(_get_cookie_file())
     opts = {
         "quiet": True,
         "noplaylist": True,
         "extractor_args": {
             "youtube": {
-                # web first → gives format 22 (720p combined) with cookies
-                # android_vr/ios fallback → bot-detection bypass, max 360p combined
-                "player_client": ["web", "android_vr", "ios"]
+                # With cookies: web is best (bypasses bot check + all formats)
+                # Without cookies: android_vr/ios bypass bot detection better
+                "player_client": ["web", "android_vr", "ios"] if has_cookies else ["android_vr", "ios", "web"]
             }
         },
     }
@@ -279,4 +289,4 @@ def stream_download():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=3000)
+    app.run(host="0.0.0.0", port=4000)
