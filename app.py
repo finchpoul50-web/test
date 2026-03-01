@@ -1,33 +1,16 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import yt_dlp
+from flask import Response
+import requests
+import urllib.parse
 
-app = Flask(__name__)
-
-# 🔥 حل مشكل CORS نهائياً
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
-
-@app.route("/")
-def home():
-    return jsonify({
-        "status": "running",
-        "message": "Downloader API Running"
-    })
-
-
-@app.route("/download", methods=["GET", "OPTIONS"])
+@app.route("/download", methods=["GET"])
 def download():
-
-    # منع Kick من API
     url = request.args.get("url")
 
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
     if "kick.com" in url.lower():
-        return jsonify({
-            "error": "Kick.com is not supported via this API"
-        }), 400
+        return jsonify({"error": "Kick.com is not supported"}), 400
 
     ydl_opts = {
         "format": "best",
@@ -39,18 +22,36 @@ def download():
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
-            return jsonify({
-                "title": info.get("title"),
-                "duration": info.get("duration"),
-                "thumbnail": info.get("thumbnail"),
-                "direct_url": info.get("url")
-            })
+        formats = info.get("formats")
+        if not formats:
+            return jsonify({"error": "No formats found"}), 500
+
+        # Pick best progressive mp4 (has audio+video)
+        best = None
+        for f in reversed(formats):
+            if f.get("ext") == "mp4" and f.get("acodec") != "none":
+                best = f
+                break
+
+        if not best:
+            return jsonify({"error": "No suitable MP4 format found"}), 500
+
+        direct_url = best.get("url")
+        headers = best.get("http_headers", {})
+
+        # Stream from YouTube
+        r = requests.get(direct_url, headers=headers, stream=True)
+
+        filename = f"{info.get('title','video')}.mp4"
+        filename = urllib.parse.quote(filename)
+
+        return Response(
+            r.iter_content(chunk_size=8192),
+            content_type=r.headers.get("Content-Type", "video/mp4"),
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
 
     except Exception as e:
-        return jsonify({
-            "error": str(e)
-        }), 500
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=3000)
+        return jsonify({"error": str(e)}), 500
