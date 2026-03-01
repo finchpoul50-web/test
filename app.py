@@ -43,22 +43,19 @@ def _get_cookie_file():
 
 def get_ydl_opts(extra=None):
     """
-    Return base yt-dlp options with:
-    - Android/iOS player clients to bypass YouTube bot detection on server IPs
-    - Cookies injected automatically if YOUTUBE_COOKIES env var is set
-    
-    YouTube's bot detection fires on datacenter IPs (like Railway) when using
-    the default 'web' client. Android/iOS/TV clients use different API endpoints  
-    that don't trigger the bot check.
+    Return base yt-dlp options.
+    - 'web' client is tried first: with cookies it bypasses bot detection AND
+      returns all combined formats including format 22 (720p MP4).
+    - 'android_vr' / 'ios' are fallbacks if web still gets blocked.
     """
     opts = {
         "quiet": True,
         "noplaylist": True,
-        # Use mobile/TV API clients — these bypass server-IP bot detection
         "extractor_args": {
             "youtube": {
-                # yt-dlp tries these in order; falls back if one fails
-                "player_client": ["android_vr", "ios", "tv_embedded"]
+                # web first → gives format 22 (720p combined) with cookies
+                # android_vr/ios fallback → bot-detection bypass, max 360p combined
+                "player_client": ["web", "android_vr", "ios"]
             }
         },
     }
@@ -92,11 +89,10 @@ def download():
     if not url:
         return jsonify({"error": "No URL provided"}), 400
 
-    if "kick.com" in url.lower():
-        return jsonify({"error": "Kick.com is not supported via this API"}), 400
-
     try:
         # Single yt-dlp call — extract info without downloading
+        # Note: extractor_args (player_client) are YouTube-specific and only
+        # activate for youtube.com/youtu.be URLs; other platforms use their own extractors.
         with yt_dlp.YoutubeDL(get_ydl_opts()) as ydl:
             info = ydl.extract_info(url, download=False)
 
